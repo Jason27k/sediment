@@ -1,6 +1,7 @@
 import { sql, toVector } from "./db";
 import { embedOne } from "./embed";
 import { parseLinks } from "./links";
+import { seedReview } from "./review";
 import { slugify, uniqueSlug } from "./slug";
 import type { Note } from "./types";
 
@@ -57,6 +58,7 @@ export async function acceptCandidate(candidateId: string, userId: string): Prom
     returning *`) as Note[];
 
   await syncLinks(note);
+  await seedReview(note);
   await sql`
     update note_candidates set status = 'accepted', resolved_at = now() where id = ${candidateId}`;
 
@@ -157,7 +159,8 @@ export async function noteDependents(noteId: string) {
     select
       (select count(*) from note_links where to_note = ${noteId})            as inbound_links,
       (select count(*) from conversations where parent_note_id = ${noteId})  as branches,
-      (select count(*) from reviews where note_id = ${noteId})               as reviews`) as {
+      (select count(*) from reviews
+        where note_id = ${noteId} and rating is not null)                     as reviews`) as {
     inbound_links: string;
     branches: string;
     reviews: string;

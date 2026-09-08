@@ -33,7 +33,7 @@ import { createBranch, listBranches, messageBranches } from "../src/lib/branches
 import { sql, toVector } from "../src/lib/db";
 import { diffLines, hasChanges } from "../src/lib/diff";
 import { noteToMarkdown } from "../src/lib/markdown";
-import { mergeNotes, noteDependents, softDeleteNote, syncLinks } from "../src/lib/notes";
+import { acceptCandidate, mergeNotes, noteDependents, softDeleteNote, syncLinks } from "../src/lib/notes";
 import { parseLinks } from "../src/lib/links";
 import { getOrCreateMainConversation } from "../src/lib/projects";
 import { slugify, uniqueSlug } from "../src/lib/slug";
@@ -135,6 +135,38 @@ async function main() {
 
   const stillThere = await sql`select deleted_at from notes where id = ${b.id}`;
   check("soft delete keeps the row", stillThere[0].deleted_at !== null);
+
+  console.log("\nreview seeding (§06 step 5)");
+  const candidate = async (title: string, kind: "concept" | "recipe") => {
+    const [row] = (await sql`
+      insert into note_candidates (user_id, project_id, title, body_md, kind)
+      values (${user.id}, ${project.id}, ${title}, 'A body worth keeping.', ${kind})
+      returning id`) as { id: string }[];
+    return acceptCandidate(row.id, user.id);
+  };
+
+  const concept = await candidate("Vacuum only reclaims tuples no snapshot can see", "concept");
+  const [seed] = (await sql`
+    select rating, interval_d, ease, due_at from reviews where note_id = ${concept.id}`) as {
+    rating: number | null;
+    interval_d: string;
+    ease: string;
+    due_at: Date;
+  }[];
+  check("accepting a concept schedules it", seed !== undefined);
+  check("the seed carries no rating", seed?.rating === null);
+  check("it opens at SM-2's defaults", Number(seed?.interval_d) === 1 && Number(seed?.ease) === 2.5);
+  check(
+    "it is due in a day",
+    Math.abs(new Date(seed.due_at).getTime() - (Date.now() + 86_400_000)) < 60_000,
+    new Date(seed.due_at).toISOString(),
+  );
+
+  const recipe = await candidate("How to enable pg_stat_statements", "recipe");
+  const recipeReviews = await sql`select id from reviews where note_id = ${recipe.id}`;
+  check("recipes are not scheduled (§09)", recipeReviews.length === 0);
+  // The delete confirmation names what it would take with it; a seed is not history.
+  check("a seed does not count as review history", (await noteDependents(concept.id)).reviews === 0);
 
   console.log("\nbranches (§07)");
   const d = await mk("borrow-checker", "The borrow checker is a lifetime solver", "It proves no reference outlives its referent.", 4);
