@@ -98,14 +98,22 @@ export async function listBranches(noteId: string): Promise<BranchSummary[]> {
     order by c.created_at desc`);
 }
 
-/** Branch counts for every anchored message in one thread, for the affordance in the chat. */
-export async function messageBranchCounts(conversationId: string): Promise<Map<string, number>> {
-  const counts = await rows<{ parent_message_id: string; branches: number }>(sql`
-    select b.parent_message_id, count(*)::int as branches
+/** Branches hanging off each message in one thread, for the affordance in the chat. */
+export async function messageBranches(
+  conversationId: string,
+): Promise<Record<string, BranchSummary[]>> {
+  const branches = await rows<BranchSummary & { parent_message_id: string }>(sql`
+    select b.id, b.title, b.anchor_title, b.created_at, b.parent_message_id,
+           (select count(*) from messages m2
+            where m2.conversation_id = b.id and m2.role <> 'system')::int as turns
     from conversations b
     join messages m on m.id = b.parent_message_id
     where m.conversation_id = ${conversationId}
-    group by b.parent_message_id`);
+    order by b.created_at`);
 
-  return new Map(counts.map((row) => [row.parent_message_id, row.branches]));
+  const byMessage: Record<string, BranchSummary[]> = {};
+  for (const { parent_message_id, ...branch } of branches) {
+    (byMessage[parent_message_id] ??= []).push(branch);
+  }
+  return byMessage;
 }
