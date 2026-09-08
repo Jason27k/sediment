@@ -1,6 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, type UIMessage } from "ai";
 import { getSessionUser, unauthorized } from "@/lib/auth";
+import { getBranch } from "@/lib/branches";
 import { assembleContext } from "@/lib/context";
 import { sql, toVector } from "@/lib/db";
 import { classifyCandidate, wasDismissed } from "@/lib/dedupe";
@@ -65,12 +66,23 @@ async function capture(
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorized();
-  const body = (await request.json()) as { messages: UIMessage[]; projectSlug: string };
+  const body = (await request.json()) as {
+    messages: UIMessage[];
+    projectSlug: string;
+    conversationId?: string;
+  };
 
   const project = await getProject(user.id, body.projectSlug);
   if (!project) return new Response("Project not found", { status: 404 });
 
-  const conversationId = await getOrCreateMainConversation(user.id, project.id);
+  // A branch is just another conversation, so the turn machinery below is
+  // identical; only the anchor it carries changes what context is assembled.
+  const branch = body.conversationId ? await getBranch(user.id, body.conversationId) : null;
+  if (body.conversationId && branch?.project_id !== project.id) {
+    return new Response("Branch not found", { status: 404 });
+  }
+
+  const conversationId = branch?.id ?? (await getOrCreateMainConversation(user.id, project.id));
   const userTurn = lastUserText(body.messages);
   if (!userTurn) return new Response("Empty message", { status: 400 });
 
@@ -92,7 +104,11 @@ export async function POST(request: Request) {
         values (${conversationId}, 'assistant', ${text}, now())
         returning id`) as { id: string }[];
 
-      await capture(user.id, project.id, message.id, userTurn, text);
+      // §06, the loop closes: a note-anchored branch amends the note it hangs
+      // off rather than proposing a twelfth near-duplicate of it.
+      if (!branch?.parent_note_id) {
+        await capture(user.id, project.id, message.id, userTurn, text);
+      }
       await refreshSummary(conversationId, project.id);
     },
   });
