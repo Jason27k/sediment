@@ -22,7 +22,7 @@ const TOOL: Anthropic.Tool = {
       body_md: {
         type: "string",
         description:
-          "The complete rewritten body, not a patch and not an addendum. Return the body unchanged if the branch did not actually change what the note should say.",
+          "The complete rewritten body, not a patch and not an addendum. 2-6 sentences of markdown, the same register as the note you were given; include a code block only if the code IS the point. Return the body unchanged if the branch did not actually change what the note should say.",
       },
       rationale: {
         type: "string",
@@ -37,6 +37,8 @@ const TOOL: Anthropic.Tool = {
 const SYSTEM = `You amend a single note after a conversation that resolved a confusion about it.
 
 One note = one atomic claim. The amendment must not turn it into two. If the branch established a second, separable claim, leave it out — it will be captured on its own.
+
+An amended note is still a note, and stays the size of one. If the fix will not fit in a handful of sentences, the note was two claims and you are only fixing the one it is about — the rest belongs in a note of its own. Amendments accumulate over a note's life, so each one has to leave it the same shape it found it.
 
 Edit narrowly. The parts of the note that were not the problem stay as they are, word for word. You are fixing the step it skipped or the word it used loosely, not rewriting it in your own voice.
 
