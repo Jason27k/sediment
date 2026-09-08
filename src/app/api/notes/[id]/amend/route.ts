@@ -1,4 +1,4 @@
-import { proposeAmendment } from "@/lib/amend";
+import { getOpenProposal, proposeAmendment, recordProposal, resolveProposal } from "@/lib/amend";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 import { getBranch } from "@/lib/branches";
 import { rows, sql } from "@/lib/db";
@@ -8,16 +8,20 @@ import type { Message, Note } from "@/lib/types";
 
 type Body =
   | { mode: "propose"; conversationId: string }
-  | { mode: "apply"; title: string; body_md: string };
+  | { mode: "apply"; amendmentId: string }
+  | { mode: "discard"; amendmentId: string };
 
 /**
- * §07. The two halves of an amendment.
+ * §07. The three things that happen to an amendment.
  *
- * "propose" is a read: it reasons over the branch and returns a diff, writing
- * nothing. "apply" is the commit, and it goes through updateNote so the note
- * re-embeds, reparses its [[links]] and bumps updated_at exactly as a hand edit
- * would. Splitting them is what puts the diff in front of the person before the
- * corpus changes — an amendment nobody read is just an unreviewed rewrite.
+ * "propose" is a read: it reasons over the branch, records what it would change,
+ * and returns a diff without touching the note. "apply" commits through
+ * updateNote so the note re-embeds and reparses its [[links]] exactly as a hand
+ * edit would. "discard" exists so that saying no is recorded rather than merely
+ * not happening — without it the apply rate would only ever count its numerator.
+ *
+ * Applying takes an amendment id and not a body: what gets written is the text
+ * that was proposed and shown, so the recorded row is exactly what landed.
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
@@ -31,12 +35,21 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const body = (await request.json()) as Body;
 
   if (body.mode === "apply") {
-    if (!body.body_md?.trim() || !body.title?.trim()) {
-      return new Response("Amendment is empty", { status: 400 });
-    }
-    return Response.json({
-      note: await updateNote(id, { title: body.title, body_md: body.body_md }),
-    });
+    const open = await getOpenProposal(user.id, body.amendmentId, id);
+    if (!open) return new Response("No open amendment for this note", { status: 404 });
+
+    // The note first, then the record: a telemetry row left saying "proposed"
+    // is a smaller harm than one claiming an edit that never landed.
+    const updated = await updateNote(id, { title: open.after_title, body_md: open.after_body_md });
+    await resolveProposal(user.id, open.id, "applied");
+
+    return Response.json({ note: updated });
+  }
+
+  if (body.mode === "discard") {
+    const discarded = await resolveProposal(user.id, body.amendmentId, "discarded");
+    if (!discarded) return new Response("No open amendment for this note", { status: 404 });
+    return Response.json({ ok: true });
   }
 
   if (body.mode !== "propose") return new Response("Unknown mode", { status: 400 });
@@ -59,11 +72,14 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (!proposal) return new Response("No amendment could be proposed", { status: 502 });
 
   const diff = diffLines(note.body_md, proposal.body_md);
+  const changed = hasChanges(diff) || proposal.title !== note.title;
+  const amendment = await recordProposal(user.id, note, branch.id, proposal, changed);
 
   return Response.json({
+    amendmentId: amendment.id,
     proposal,
     diff,
-    changed: hasChanges(diff) || proposal.title !== note.title,
+    changed,
     titleChanged: proposal.title !== note.title,
   });
 }

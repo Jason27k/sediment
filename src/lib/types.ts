@@ -49,6 +49,30 @@ export type Candidate = {
 /** A candidate as the tray reads it: the row plus the note the dedupe check landed on. */
 export type TrayCandidate = Candidate & { near_title: string | null; near_slug: string | null };
 
+export type AmendmentStatus = "proposed" | "applied" | "discarded" | "superseded" | "no_change";
+
+/**
+ * §07. One proposal and what became of it.
+ *
+ * Both bodies are kept so the apply rate and the size a note keeps across
+ * repeated branches are answerable from these rows alone, without needing the
+ * note's own history.
+ */
+export type Amendment = {
+  id: string;
+  user_id: string;
+  note_id: string;
+  conversation_id: string;
+  before_title: string;
+  before_body_md: string;
+  after_title: string;
+  after_body_md: string;
+  rationale: string | null;
+  status: AmendmentStatus;
+  resolved_at: Date | null;
+  created_at: Date;
+};
+
 export type Message = {
   id: string;
   conversation_id: string;

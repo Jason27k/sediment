@@ -7,7 +7,13 @@ import type { DiffRow } from "@/lib/diff";
 import { DiffView } from "./diff-view";
 
 type Proposal = { title: string; body_md: string; rationale: string };
-type Proposed = { proposal: Proposal; diff: DiffRow[]; changed: boolean; titleChanged: boolean };
+type Proposed = {
+  amendmentId: string;
+  proposal: Proposal;
+  diff: DiffRow[];
+  changed: boolean;
+  titleChanged: boolean;
+};
 
 /**
  * §07: the confusion resolves, and the resolution amends the note.
@@ -16,6 +22,9 @@ type Proposed = { proposal: Proposal; diff: DiffRow[]; changed: boolean; titleCh
  * outcome rather than a failure — a branch that confirms the note was already
  * right is worth as much as one that fixes it, and pretending otherwise would
  * push edits into the corpus to justify the round trip.
+ *
+ * Every outcome is recorded, discards included: an apply rate counted only from
+ * the proposals that landed is not a rate.
  */
 export function AmendPanel({
   noteId,
@@ -60,15 +69,16 @@ export function AmendPanel({
 
   async function apply() {
     if (!result) return;
-    const done = await send({
-      mode: "apply",
-      title: result.proposal.title,
-      body_md: result.proposal.body_md,
-    });
-    if (!done) return;
+    if (!(await send({ mode: "apply", amendmentId: result.amendmentId }))) return;
     setResult(null);
     setApplied(true);
     router.refresh();
+  }
+
+  async function discard() {
+    if (!result) return;
+    await send({ mode: "discard", amendmentId: result.amendmentId });
+    setResult(null);
   }
 
   return (
@@ -118,7 +128,7 @@ export function AmendPanel({
                   apply
                 </button>
                 <button
-                  onClick={() => setResult(null)}
+                  onClick={discard}
                   disabled={busy}
                   className="border border-rule px-2 py-1 font-mono text-[0.65rem] text-ink-faint disabled:opacity-40"
                 >

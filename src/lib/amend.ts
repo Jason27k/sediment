@@ -1,12 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Message, Note } from "./types";
+import { sql } from "./db";
+import type { Amendment, AmendmentStatus, Message, Note } from "./types";
 
 const client = new Anthropic();
 
 /** The branch is the input; a long one is clipped from the front, keeping the resolution. */
 const TRANSCRIPT_TURNS = 20;
 
-export type Amendment = { title: string; body_md: string; rationale: string };
+export type AmendmentProposal = { title: string; body_md: string; rationale: string };
 
 const TOOL: Anthropic.Tool = {
   name: "propose_amendment",
@@ -62,7 +63,7 @@ Write in the person's voice, as something they would recognise as their own unde
 export async function proposeAmendment(
   note: Pick<Note, "title" | "body_md" | "kind" | "assumes">,
   turns: Message[],
-): Promise<Amendment | null> {
+): Promise<AmendmentProposal | null> {
   const recent = turns.slice(-TRANSCRIPT_TURNS);
   if (recent.length === 0) return null;
 
@@ -94,7 +95,7 @@ export async function proposeAmendment(
   const block = response.content.find((c) => c.type === "tool_use");
   if (!block || block.type !== "tool_use") return null;
 
-  const input = block.input as Partial<Amendment>;
+  const input = block.input as Partial<AmendmentProposal>;
   if (!input.title?.trim() || !input.body_md?.trim()) return null;
 
   return {
@@ -102,4 +103,67 @@ export async function proposeAmendment(
     body_md: input.body_md.trim(),
     rationale: input.rationale?.trim() ?? "",
   };
+}
+
+/**
+ * Records a proposal and what it would change, before anyone has ruled on it.
+ *
+ * An outstanding proposal for the same note in the same branch is marked
+ * superseded rather than discarded: re-rolling is a weaker signal than reading
+ * one and saying no, and folding the two together would understate the apply
+ * rate exactly where it matters. A proposal that changes nothing is terminal on
+ * arrival — the branch confirmed the note, and there is nothing left to rule on.
+ */
+export async function recordProposal(
+  userId: string,
+  note: Pick<Note, "id" | "title" | "body_md">,
+  conversationId: string,
+  proposal: AmendmentProposal,
+  changed: boolean,
+): Promise<Amendment> {
+  await sql`
+    update note_amendments
+    set status = 'superseded', resolved_at = now()
+    where note_id = ${note.id} and conversation_id = ${conversationId} and status = 'proposed'`;
+
+  const [amendment] = (await sql`
+    insert into note_amendments
+      (user_id, note_id, conversation_id, before_title, before_body_md,
+       after_title, after_body_md, rationale, status, resolved_at)
+    values
+      (${userId}, ${note.id}, ${conversationId}, ${note.title}, ${note.body_md},
+       ${proposal.title}, ${proposal.body_md}, ${proposal.rationale},
+       ${changed ? "proposed" : "no_change"}, ${changed ? null : new Date()})
+    returning *`) as Amendment[];
+
+  return amendment;
+}
+
+/** The open proposal for a note, if there is one. Scoped so a stale id cannot reach another note. */
+export async function getOpenProposal(
+  userId: string,
+  amendmentId: string,
+  noteId: string,
+): Promise<Amendment | null> {
+  const [amendment] = (await sql`
+    select * from note_amendments
+    where id = ${amendmentId} and user_id = ${userId} and note_id = ${noteId}
+      and status = 'proposed'`) as Amendment[];
+
+  return amendment ?? null;
+}
+
+/** Closes out a proposal. Only one that is still open can be ruled on. */
+export async function resolveProposal(
+  userId: string,
+  amendmentId: string,
+  status: Extract<AmendmentStatus, "applied" | "discarded">,
+): Promise<Amendment | null> {
+  const [amendment] = (await sql`
+    update note_amendments
+    set status = ${status}, resolved_at = now()
+    where id = ${amendmentId} and user_id = ${userId} and status = 'proposed'
+    returning *`) as Amendment[];
+
+  return amendment ?? null;
 }

@@ -28,6 +28,7 @@ if (!LIVE_VOYAGE) {
   }) as typeof fetch;
 }
 
+import { getOpenProposal, recordProposal, resolveProposal } from "../src/lib/amend";
 import { createBranch, listBranches, messageBranches } from "../src/lib/branches";
 import { sql, toVector } from "../src/lib/db";
 import { diffLines, hasChanges } from "../src/lib/diff";
@@ -168,6 +169,26 @@ async function main() {
 
   const grouped = await messageBranches(conversationId);
   check("message branches group by anchor", grouped[anchorMessage.id]?.length === 1);
+
+  console.log("\namendment telemetry (§07)");
+  const proposal = { title: d.title, body_md: "It proves no reference outlives its referent, which is a region and not a duration.", rationale: "The branch pinned down what a lifetime is." };
+  const first = await recordProposal(user.id, d, noteBranch!.id, proposal, true);
+  check("a proposal is recorded before it is ruled on", first.status === "proposed" && first.resolved_at === null);
+  check("it keeps the note as it read", first.before_body_md === d.body_md);
+
+  check("the open proposal is findable", (await getOpenProposal(user.id, first.id, d.id))?.id === first.id);
+  check("a stale id cannot reach another note", (await getOpenProposal(user.id, first.id, e.id)) === null);
+
+  const second = await recordProposal(user.id, d, noteBranch!.id, proposal, true);
+  const [superseded] = (await sql`select status from note_amendments where id = ${first.id}`) as { status: string }[];
+  check("re-rolling supersedes rather than discards", superseded.status === "superseded");
+
+  const applied = await resolveProposal(user.id, second.id, "applied");
+  check("applying closes the proposal", applied?.status === "applied" && applied.resolved_at !== null);
+  check("a proposal cannot be ruled on twice", (await resolveProposal(user.id, second.id, "discarded")) === null);
+
+  const confirmed = await recordProposal(user.id, e, noteBranch!.id, { ...proposal, body_md: e.body_md }, false);
+  check("a no-change proposal is terminal on arrival", confirmed.status === "no_change" && confirmed.resolved_at !== null);
 
   // §07: a merge is a redirect, so the reasoning follows the note it was about.
   await mergeNotes(d.id, e.id);
