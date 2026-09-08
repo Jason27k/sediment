@@ -1,0 +1,55 @@
+export type NoteKind = "concept" | "recipe";
+export type CandidateStatus = "pending" | "accepted" | "dismissed" | "merged";
+export type Suggestion = "new" | "review" | "extend";
+
+export type User = { id: string; email: string; name: string | null; image: string | null };
+
+export type Project = {
+  id: string;
+  user_id: string;
+  name: string;
+  slug: string;
+  brief: string | null;
+  created_at: Date;
+};
+
+export type Note = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  slug: string;
+  title: string;
+  body_md: string;
+  kind: NoteKind;
+  assumes: string | null;
+  source_type: "message" | "url" | "file" | null;
+  source_ref: string | null;
+  merged_into: string | null;
+  archived_at: Date | null;
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type Candidate = {
+  id: string;
+  project_id: string;
+  message_id: string | null;
+  title: string;
+  body_md: string;
+  kind: NoteKind;
+  assumes: string | null;
+  status: CandidateStatus;
+  near_note_id: string | null;
+  near_score: number | null;
+  suggestion: Suggestion | null;
+  created_at: Date;
+};
+
+export type Message = {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: Date;
+};

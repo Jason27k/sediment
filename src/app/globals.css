@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  --color-paper: #eceeeb;
+  --color-surface: #f7f8f6;
+  --color-ink: #15201e;
+  --color-ink-soft: #56635f;
+  --color-ink-faint: #7c8783;
+  --color-rule: #d1d7d2;
+  --color-accent: #0e6a5e;
+  --color-signal: #8a5510;
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  @theme {
+    --color-paper: #0f1513;
+    --color-surface: #161e1c;
+    --color-ink: #e2e8e4;
+    --color-ink-soft: #94a29d;
+    --color-ink-faint: #71807b;
+    --color-rule: #2a3733;
+    --color-accent: #45b5a2;
+    --color-signal: #d6a055;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
+
+.prose-note h1, .prose-note h2, .prose-note h3 { font-weight: 600; margin: 1.2em 0 .4em; }
+.prose-note p { margin: 0 0 .8em; }
+.prose-note pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule);
+  padding: .8rem 1rem;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  margin: 0 0 .8em;
+}
+.prose-note code { font-family: var(--font-mono); font-size: .86em; }
+.prose-note ul, .prose-note ol { margin: 0 0 .8em; padding-left: 1.2rem; list-style: disc; }
