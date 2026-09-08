@@ -46,6 +46,9 @@ export type Candidate = {
   created_at: Date;
 };
 
+/** A candidate as the tray reads it: the row plus the note the dedupe check landed on. */
+export type TrayCandidate = Candidate & { near_title: string | null; near_slug: string | null };
+
 export type Message = {
   id: string;
   conversation_id: string;

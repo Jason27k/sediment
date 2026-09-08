@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getBranch } from "@/lib/branches";
 import { rows, sql } from "@/lib/db";
-import { getProject } from "@/lib/projects";
+import { getProject, listCandidates } from "@/lib/projects";
 import { BranchWorkspace, type BranchAnchorView } from "@/components/branch-workspace";
 import type { Message, Note } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export default async function BranchPage({
   const branch = await getBranch(user.id, branchId);
   if (!branch || branch.project_id !== project.id) notFound();
 
-  const [history, notes] = await Promise.all([
+  const [history, notes, candidates] = await Promise.all([
     rows<Message>(sql`
       select id, conversation_id, role, content, created_at
       from messages
@@ -32,6 +32,9 @@ export default async function BranchPage({
     branch.parent_note_id
       ? rows<Note>(sql`select * from active_notes where id = ${branch.parent_note_id}`)
       : Promise.resolve([]),
+    // Only a message branch shows a tray, but the query is one indexed read and
+    // fetching it here keeps the anchor cases from each needing their own await.
+    listCandidates(project.id),
   ]);
 
   const note = notes[0] ?? null;
@@ -92,6 +95,7 @@ export default async function BranchPage({
           parts: [{ type: "text" as const, text: m.content }],
         }))}
         anchor={anchor}
+        candidates={candidates}
       />
     </div>
   );

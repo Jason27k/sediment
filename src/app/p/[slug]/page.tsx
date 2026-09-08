@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { messageBranches } from "@/lib/branches";
 import { rows, sql } from "@/lib/db";
-import { getOrCreateMainConversation, getProject } from "@/lib/projects";
+import { getOrCreateMainConversation, getProject, listCandidates } from "@/lib/projects";
 import { Workspace } from "@/components/workspace";
 import type { Message } from "@/lib/types";
 
@@ -16,7 +16,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   if (!project) notFound();
 
   const conversationId = await getOrCreateMainConversation(user.id, project.id);
-  const [history, branches] = await Promise.all([
+  const [history, branches, candidates] = await Promise.all([
     rows<Message>(sql`
       select id, conversation_id, role, content, created_at
       from messages
@@ -24,6 +24,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       order by created_at`),
     // Branches are listed under their anchor, never in a conversation list (§07).
     messageBranches(conversationId),
+    listCandidates(project.id),
   ]);
 
   return (
@@ -48,6 +49,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       <Workspace
         projectSlug={project.slug}
         branches={branches}
+        candidates={candidates}
         initialMessages={history.map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",

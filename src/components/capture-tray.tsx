@@ -1,45 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-
-type Candidate = {
-  id: string;
-  title: string;
-  body_md: string;
-  kind: "concept" | "recipe";
-  assumes: string | null;
-  suggestion: "new" | "review" | "extend" | null;
-  near_note_id: string | null;
-  near_title: string | null;
-  near_score: number | null;
-};
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import type { TrayCandidate } from "@/lib/types";
 
 /**
  * §06 step 4. Candidates sit here, not in the corpus.
  *
+ * The list is server-rendered and refreshed with router.refresh() rather than
+ * fetched on mount: the page that renders this tray has already queried the
+ * database, so making the browser ask again is a round trip that buys nothing
+ * and a second copy of the data that can disagree with the first.
+ *
  * The suggestion is the dedupe verdict: "extend" means this duplicates an
  * existing note and should amend it rather than become note thirteen.
  */
-export function CaptureTray({
-  projectSlug,
-  refreshKey,
-}: {
-  projectSlug: string;
-  refreshKey: number;
-}) {
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+export function CaptureTray({ candidates }: { candidates: TrayCandidate[] }) {
+  const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const response = await fetch(`/api/candidates?project=${projectSlug}`);
-    if (!response.ok) return;
-    const { candidates } = await response.json();
-    setCandidates(candidates);
-  }, [projectSlug]);
-
-  useEffect(() => {
-    void load();
-  }, [load, refreshKey]);
 
   async function act(id: string, body: Record<string, unknown>) {
     setBusyId(id);
@@ -49,7 +27,7 @@ export function CaptureTray({
       body: JSON.stringify(body),
     });
     setBusyId(null);
-    await load();
+    router.refresh();
   }
 
   return (

@@ -1,9 +1,13 @@
 import { getSessionUser, unauthorized } from "@/lib/auth";
-import { sql } from "@/lib/db";
-import { getProject } from "@/lib/projects";
-import type { Candidate } from "@/lib/types";
+import { getProject, listCandidates } from "@/lib/projects";
 
-/** The capture tray. Candidates are not notes and never appear in the corpus. */
+/**
+ * The capture tray, for anything reading it over HTTP.
+ *
+ * The tray in the app is server-rendered from listCandidates directly and does
+ * not call this — a page that already queries the database has no reason to
+ * make the browser ask a second time.
+ */
 export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user) return unauthorized();
@@ -13,15 +17,5 @@ export async function GET(request: Request) {
   const project = await getProject(user.id, slug);
   if (!project) return new Response("Project not found", { status: 404 });
 
-  const candidates = (await sql`
-    select c.*, n.title as near_title, n.slug as near_slug
-    from note_candidates c
-    left join notes n on n.id = c.near_note_id
-    where c.project_id = ${project.id} and c.status = 'pending'
-    order by c.created_at desc`) as (Candidate & {
-    near_title: string | null;
-    near_slug: string | null;
-  })[];
-
-  return Response.json({ candidates });
+  return Response.json({ candidates: await listCandidates(project.id) });
 }

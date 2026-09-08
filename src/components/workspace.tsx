@@ -2,10 +2,12 @@
 
 import type { UIMessage } from "ai";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo } from "react";
 import { BranchButton } from "./branch-button";
 import { CaptureTray } from "./capture-tray";
 import { ChatPane } from "./chat-pane";
+import type { TrayCandidate } from "@/lib/types";
 
 type MessageBranch = { id: string; title: string | null; turns: number };
 
@@ -13,13 +15,17 @@ export function Workspace({
   projectSlug,
   initialMessages,
   branches,
+  candidates,
 }: {
   projectSlug: string;
   initialMessages: UIMessage[];
   branches: Record<string, MessageBranch[]>;
+  candidates: TrayCandidate[];
 }) {
-  const [trayKey, setTrayKey] = useState(0);
-  const refreshTray = useCallback(() => setTrayKey((n) => n + 1), []);
+  const router = useRouter();
+  // Extraction writes candidates on the server, so the server is what re-reads
+  // them; the turn ending is only the signal to look again.
+  const refresh = useCallback(() => router.refresh(), [router]);
 
   // Only a persisted message can be branched from: a turn that just streamed
   // carries the client's own id, not the row's. Reloading makes it branchable,
@@ -34,7 +40,7 @@ export function Workspace({
       <ChatPane
         projectSlug={projectSlug}
         initialMessages={initialMessages}
-        onTurnComplete={refreshTray}
+        onTurnComplete={refresh}
         empty={
           <p className="text-sm text-ink-faint">
             Ask something. Notes are proposed as you go — nothing is saved to the corpus
@@ -62,7 +68,7 @@ export function Workspace({
         }}
       />
 
-      <CaptureTray projectSlug={projectSlug} refreshKey={trayKey} />
+      <CaptureTray candidates={candidates} />
     </div>
   );
 }

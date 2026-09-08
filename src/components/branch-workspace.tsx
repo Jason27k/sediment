@@ -1,10 +1,12 @@
 "use client";
 
 import type { UIMessage } from "ai";
-import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
 import { AmendPanel } from "./amend-panel";
 import { CaptureTray } from "./capture-tray";
 import { ChatPane } from "./chat-pane";
+import type { TrayCandidate } from "@/lib/types";
 
 export type BranchAnchorView =
   | { kind: "note"; noteId: string; noteSlug: string; noteTitle: string }
@@ -27,14 +29,16 @@ export function BranchWorkspace({
   conversationId,
   initialMessages,
   anchor,
+  candidates,
 }: {
   projectSlug: string;
   conversationId: string;
   initialMessages: UIMessage[];
   anchor: BranchAnchorView;
+  candidates: TrayCandidate[];
 }) {
-  const [trayKey, setTrayKey] = useState(0);
-  const refreshTray = useCallback(() => setTrayKey((n) => n + 1), []);
+  const router = useRouter();
+  const refresh = useCallback(() => router.refresh(), [router]);
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -42,7 +46,7 @@ export function BranchWorkspace({
         projectSlug={projectSlug}
         conversationId={conversationId}
         initialMessages={initialMessages}
-        onTurnComplete={anchor.kind === "message" ? refreshTray : undefined}
+        onTurnComplete={anchor.kind === "message" ? refresh : undefined}
         placeholder={anchor.kind === "note" ? "What is not landing?" : "Ask something"}
         empty={
           <p className="text-sm text-ink-faint">
@@ -64,7 +68,7 @@ export function BranchWorkspace({
       )}
 
       {anchor.kind === "message" && (
-        <CaptureTray projectSlug={projectSlug} refreshKey={trayKey} />
+        <CaptureTray candidates={candidates} />
       )}
 
       {anchor.kind === "detached" && (

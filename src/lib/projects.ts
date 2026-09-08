@@ -1,6 +1,6 @@
 import { sql } from "./db";
 import { slugify, uniqueSlug } from "./slug";
-import type { Note, Project } from "./types";
+import type { Note, Project, TrayCandidate } from "./types";
 
 export async function listProjects(userId: string): Promise<(Project & { note_count: number })[]> {
   return (await sql`
@@ -43,6 +43,16 @@ export async function getNoteBySlug(projectId: string, slug: string): Promise<No
   const [note] = (await sql`
     select * from active_notes where project_id = ${projectId} and slug = ${slug}`) as Note[];
   return note ?? null;
+}
+
+/** §06 step 4. The capture tray. Candidates are not notes and never appear in the corpus. */
+export async function listCandidates(projectId: string): Promise<TrayCandidate[]> {
+  return (await sql`
+    select c.*, n.title as near_title, n.slug as near_slug
+    from note_candidates c
+    left join notes n on n.id = c.near_note_id
+    where c.project_id = ${projectId} and c.status = 'pending'
+    order by c.created_at desc`) as TrayCandidate[];
 }
 
 /** The project's main thread; branches (§07) hang off notes and are created separately. */
