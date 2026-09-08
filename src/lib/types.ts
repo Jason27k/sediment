@@ -53,3 +53,22 @@ export type Message = {
   content: string;
   created_at: Date;
 };
+
+/**
+ * The project's main thread when both parents are null, otherwise a branch (§07).
+ * anchor_title and anchor_snapshot_md hold the anchor as it read at branch time,
+ * which is what lets a branch outlive the note or message it hangs off.
+ */
+export type Conversation = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  title: string | null;
+  parent_note_id: string | null;
+  parent_message_id: string | null;
+  anchor_title: string | null;
+  anchor_snapshot_md: string | null;
+  summary: string | null;
+  summary_through_count: number;
+  created_at: Date;
+};

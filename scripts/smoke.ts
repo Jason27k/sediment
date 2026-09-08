@@ -28,10 +28,13 @@ if (!LIVE_VOYAGE) {
   }) as typeof fetch;
 }
 
+import { createBranch, listBranches, messageBranches } from "../src/lib/branches";
 import { sql, toVector } from "../src/lib/db";
+import { diffLines, hasChanges } from "../src/lib/diff";
 import { noteToMarkdown } from "../src/lib/markdown";
 import { mergeNotes, noteDependents, softDeleteNote, syncLinks } from "../src/lib/notes";
 import { parseLinks } from "../src/lib/links";
+import { getOrCreateMainConversation } from "../src/lib/projects";
 import { slugify, uniqueSlug } from "../src/lib/slug";
 import type { Note, Project, User } from "../src/lib/types";
 
@@ -51,9 +54,23 @@ async function main() {
   check("uniqueSlug collides", uniqueSlug("a", new Set(["a", "a-2"])) === "a-3");
   check("parseLinks", JSON.stringify(parseLinks("see [[foo-bar]] and [[baz|Baz]]")) === '["foo-bar","baz"]');
 
+  const same = diffLines("One claim.\n\nWith a reason.", "One claim.\n\nWith a reason.\n");
+  check("diff ignores trailing whitespace", !hasChanges(same));
+
+  const reworded = diffLines("The trait is object safe.", "The trait is not object safe.");
+  const inserted = reworded.find((r) => r.type === "add")?.parts?.filter((p) => p.changed);
+  check("diff refines a reworded line to words", inserted?.length === 1 && inserted[0].text === "not ");
+
+  const appended = diffLines("First.", "First.\nSecond.");
+  check(
+    "diff leaves a pure insertion unpaired",
+    appended.length === 2 && appended[0].type === "same" && appended[1].type === "add",
+  );
+
+  // name is NOT NULL since 0002 mapped Better Auth onto this table.
   const [user] = (await sql`
-    insert into users (email) values ('smoke@sediment.local')
-    on conflict (email) do update set email = excluded.email
+    insert into users (email, name) values ('smoke@sediment.local', 'Smoke')
+    on conflict (email) do update set name = excluded.name
     returning id, email, name, image`) as User[];
 
   const [project] = (await sql`
@@ -117,6 +134,50 @@ async function main() {
 
   const stillThere = await sql`select deleted_at from notes where id = ${b.id}`;
   check("soft delete keeps the row", stillThere[0].deleted_at !== null);
+
+  console.log("\nbranches (§07)");
+  const d = await mk("borrow-checker", "The borrow checker is a lifetime solver", "It proves no reference outlives its referent.", 4);
+  const e = await mk("lifetime-elision", "Elision fills in the common lifetimes", "Three rules cover most signatures.", 5);
+
+  const noteBranch = await createBranch(user.id, { note: d.id });
+  check("branch anchors to a note", noteBranch?.parent_note_id === d.id && noteBranch?.project_id === project.id);
+  check(
+    "branch snapshots the note as it read",
+    noteBranch?.anchor_snapshot_md === d.body_md && noteBranch?.anchor_title === d.title,
+  );
+
+  check("branch is not the main thread", (await getOrCreateMainConversation(user.id, project.id)) !== noteBranch!.id);
+
+  const listed = await listBranches(d.id);
+  check("branches list under their anchor", listed.length === 1 && listed[0].id === noteBranch!.id && listed[0].turns === 0);
+
+  check("a branch cannot be opened on someone else's note", (await createBranch(crypto.randomUUID(), { note: d.id })) === null);
+
+  const conversationId = await getOrCreateMainConversation(user.id, project.id);
+  const [anchorMessage] = (await sql`
+    insert into messages (conversation_id, role, content)
+    values (${conversationId}, 'assistant', 'A lifetime is a region of the program, not a duration.')
+    returning id`) as { id: string }[];
+
+  const messageBranch = await createBranch(user.id, { message: anchorMessage.id });
+  check(
+    "branch anchors to a message and inherits its project",
+    messageBranch?.parent_message_id === anchorMessage.id && messageBranch?.project_id === project.id,
+  );
+  check("message branch titles itself from the message", messageBranch?.anchor_title?.startsWith("A lifetime is a region") === true);
+
+  const grouped = await messageBranches(conversationId);
+  check("message branches group by anchor", grouped[anchorMessage.id]?.length === 1);
+
+  // §07: a merge is a redirect, so the reasoning follows the note it was about.
+  await mergeNotes(d.id, e.id);
+  const [reanchored] = (await sql`select parent_note_id from conversations where id = ${noteBranch!.id}`) as { parent_note_id: string }[];
+  check("merging the anchor re-anchors the branch", reanchored.parent_note_id === e.id);
+
+  // ...and a deletion is a non-event, because the snapshot was written up front.
+  await softDeleteNote(e.id);
+  const [orphan] = (await sql`select anchor_snapshot_md from conversations where id = ${noteBranch!.id}`) as { anchor_snapshot_md: string }[];
+  check("deleting the anchor leaves the branch readable", orphan.anchor_snapshot_md === d.body_md);
 
   await sql`delete from projects where id = ${project.id}`;
   await sql`delete from users where id = ${user.id}`;
